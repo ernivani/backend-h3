@@ -3,6 +3,7 @@ mod models;
 mod routes;
 
 use actix_web::{web, App, HttpServer};
+use actix_cors::Cors;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 use auth::AuthService;
@@ -24,7 +25,15 @@ async fn main() -> std::io::Result<()> {
     let auth_service = Arc::new(AuthService::new(pool));
 
     HttpServer::new(move || {
+        let cors = Cors::default()
+            .allowed_origin("http://localhost:5173")
+            .allowed_methods(vec!["GET", "POST", "PUT", "DELETE"])
+            .allowed_headers(vec!["Authorization", "Content-Type"])
+            .supports_credentials()
+            .max_age(3600);
+
         App::new()
+            .wrap(cors)
             .app_data(web::Data::new(auth_service.clone()))
             .configure(routes::user_routes::config)
     })
