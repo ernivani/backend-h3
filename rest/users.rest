@@ -1,40 +1,55 @@
-# Variables d'environnement pour stocker le token
+# Configuration des variables d'environnement
 @baseUrl = http://localhost:8000/api
-@authToken = your_jwt_token_here
+@authToken = {{login.response.body.token}}
 
-### Register a new user
+### Test de la création d'un compte (Register)
+# @name register
 POST {{baseUrl}}/auth/register
 Content-Type: application/json
 
 {
-    "name": "John Doe",
-    "email": "john@example.com",
-    "password": "securepassword123"
+    "name": "Thomas Lindeker",
+    "email": "thomas@example.com",
+    "password": "password123"
 }
 
-### Login and get token
+### Test de la connexion (Login)
 # @name login
 POST {{baseUrl}}/auth/login
 Content-Type: application/json
 
 {
-    "email": "john@example.com",
-    "password": "securepassword123"
+    "email": "thomas@example.com",
+    "password": "password123"
 }
 
-### Automatically set the auth token from login response
-@authToken = {{login.response.body.token}}
-
-### Get current user profile
+### Test de récupération du profil utilisateur
+# Utilise le token du dernier login
 GET {{baseUrl}}/users/me
 Authorization: Bearer {{authToken}}
 
-### Update current user profile
+### Test de mise à jour du profil utilisateur
+# La mise à jour invalidera le token actuel, nécessitant une nouvelle connexion
 PUT {{baseUrl}}/users/me
 Authorization: Bearer {{authToken}}
 Content-Type: application/json
 
 {
-    "name": "John Updated",
-    "email": "john.updated@example.com"
+    "name": "Thomas Updated",
+    "email": "thomas.updated@example.com"
 }
+
+### Test de reconnexion après mise à jour
+# @name login_after_update
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "thomas.updated@example.com",
+    "password": "password123"
+}
+
+### Test de récupération du profil avec le nouveau token
+# Utilise le token de la nouvelle connexion
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{login_after_update.response.body.token}}
