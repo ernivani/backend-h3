@@ -1,0 +1,40 @@
+# Variables d'environnement pour stocker le token
+@baseUrl = http://localhost:8000/api
+@authToken = your_jwt_token_here
+
+### Register a new user
+POST {{baseUrl}}/auth/register
+Content-Type: application/json
+
+{
+    "name": "John Doe",
+    "email": "john@example.com",
+    "password": "securepassword123"
+}
+
+### Login and get token
+# @name login
+POST {{baseUrl}}/auth/login
+Content-Type: application/json
+
+{
+    "email": "john@example.com",
+    "password": "securepassword123"
+}
+
+### Automatically set the auth token from login response
+@authToken = {{login.response.body.token}}
+
+### Get current user profile
+GET {{baseUrl}}/users/me
+Authorization: Bearer {{authToken}}
+
+### Update current user profile
+PUT {{baseUrl}}/users/me
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "name": "John Updated",
+    "email": "john.updated@example.com"
+}
