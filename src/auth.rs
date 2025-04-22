@@ -1,4 +1,5 @@
 use crate::models::{AuthResponse, LoginCredentials, RegisterCredentials, User};
+use crate::gdpr::GdprService;
 use anyhow::{Result, anyhow};
 use bcrypt::{hash, verify, DEFAULT_COST};
 use jsonwebtoken::{decode, encode, DecodingKey, EncodingKey, Header, Validation};
@@ -60,7 +61,7 @@ impl AuthService {
         Ok(AuthResponse { token, user })
     }
 
-    pub async fn login(&self, creds: LoginCredentials) -> Result<AuthResponse> {
+    pub async fn login(&self, creds: LoginCredentials, ip: Option<&str>, user_agent: Option<&str>) -> Result<AuthResponse> {
         info!("Attempting login for user: {}", creds.email);
         
         let user = sqlx::query_as!(
@@ -73,17 +74,39 @@ impl AuthService {
             creds.email
         )
         .fetch_optional(&self.pool)
-        .await?
-        .ok_or_else(|| {
+        .await?;
+        
+        // Log the login attempt for GDPR tracking, regardless of success
+        if let Some(ref user) = user {
+            // Create GDPR service to log the login attempt
+            let gdpr_service = GdprService::new(self.pool.clone());
+            
+            // Record login attempt for GDPR tracking
+            let success = match verify(creds.password.as_bytes(), &user.password) {
+                Ok(result) => result,
+                Err(_) => false
+            };
+            
+            // Only log when IP and user agent are provided
+            if let (Some(ip), Some(user_agent)) = (ip, user_agent) {
+                if let Err(e) = gdpr_service.record_login_attempt(user.id, ip, user_agent, success).await {
+                    error!("Failed to record login attempt: {}", e);
+                    // Continue even if logging fails
+                }
+            }
+            
+            // If password doesn't match, return error
+            if !success {
+                error!("Invalid password for user: {}", creds.email);
+                return Err(anyhow!("Invalid email or password"));
+            }
+        } else {
             error!("User not found: {}", creds.email);
-            anyhow!("Invalid email or password")
-        })?;
-
-        if !verify(creds.password.as_bytes(), &user.password)? {
-            error!("Invalid password for user: {}", creds.email);
             return Err(anyhow!("Invalid email or password"));
         }
-
+        
+        // At this point we know user exists and password is correct
+        let user = user.unwrap();
         let token = self.create_token(&user)?;
         info!("User logged in successfully: {}", user.email);
         Ok(AuthResponse { token, user })

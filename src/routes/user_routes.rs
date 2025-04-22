@@ -32,10 +32,24 @@ async fn register(
 }
 
 async fn login(
+    req: HttpRequest,
     auth_service: web::Data<Arc<AuthService>>,
     credentials: web::Json<LoginCredentials>,
 ) -> impl Responder {
-    match auth_service.login(credentials.into_inner()).await {
+    // Extract IP address and user agent for GDPR compliance
+    let ip_address = req.connection_info().realip_remote_addr()
+        .unwrap_or("unknown")
+        .to_string();
+    
+    let user_agent_string = req
+        .headers()
+        .get("User-Agent")
+        .and_then(|h| h.to_str().ok())
+        .unwrap_or("unknown")
+        .to_string();
+    
+    let creds = credentials.into_inner();
+    match auth_service.login(creds, Some(&ip_address), Some(&user_agent_string)).await {
         Ok(response) => HttpResponse::Ok().json(response),
         Err(e) => HttpResponse::Unauthorized().body(e.to_string()),
     }

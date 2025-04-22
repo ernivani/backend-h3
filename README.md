@@ -62,9 +62,60 @@ sqlx migrate run
 The API provides the following endpoints:
 
 - User Management:
-  - `POST /api/users/register` - Register a new user
-  - `POST /api/users/login` - Login user
+  - `POST /api/auth/register` - Register a new user
+  - `POST /api/auth/login` - Login user
   - `GET /api/users/me` - Get current user info
+  - `PUT /api/users/me` - Update current user info
+
+- GDPR Compliance:
+  - `GET /api/gdpr/export` - Export user data (right of access)
+  - `POST /api/gdpr/consent` - Record user consent
+  - `DELETE /api/gdpr/delete` - Delete user data (right to be forgotten)
+
+- Security:
+  - `POST /api/security/scan` - Run breach detection scan (admin only)
+
+## GDPR Features
+
+The application implements the following GDPR-compliant features:
+
+1. **Data Minimization**: Only essential personal data is collected
+2. **Transparency**: Comprehensive privacy policy available
+3. **User Rights**:
+   - Right of access (data export)
+   - Right to rectification (update profile)
+   - Right to erasure (account deletion)
+   - Consent management
+
+4. **Privacy by Design**:
+   - Encryption of sensitive data
+   - Secure authentication and authorization
+   - Access controls and audit logging
+
+5. **Breach Detection & Notification**:
+   - Automated breach detection system
+   - Incident logging and tracking
+   - CNIL notification templates
+   - User impact assessment
+
+## Data Breach Detection
+
+The application includes a data breach detection system that:
+
+1. Monitors for suspicious activity patterns:
+   - Multiple failed login attempts
+   - Unusual data export activity
+   - Suspicious admin actions
+
+2. Generates incident reports with severity assessment
+
+3. Prepares notification templates for authorities and affected users
+
+4. Can be scheduled to run automatically via cron job:
+```bash
+# Run breach detection daily at 2 AM
+0 2 * * * /path/to/backend-h3/scripts/breach_scan.sh
+```
 
 ## Project Structure
 
@@ -72,12 +123,14 @@ The API provides the following endpoints:
 .
 ├── src/
 │   ├── main.rs          # Application entry point
-│   ├── api.rs           # API routes and handlers
-│   ├── database.rs      # Database connection and utilities
-│   ├── models/          # Data models
+│   ├── auth.rs          # Authentication service
+│   ├── gdpr.rs          # GDPR compliance features
+│   ├── breach_detection.rs # Data breach detection system
+│   ├── models.rs        # Data models
 │   └── routes/          # Route handlers
 ├── migrations/          # Database migrations
-└── rest/               # REST API examples
+├── scripts/             # Utility scripts
+└── rest/                # REST API examples
 ```
 
 ## Technologies Used

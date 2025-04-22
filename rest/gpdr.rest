@@ -1,0 +1,44 @@
+# Configuration des variables d'environnement
+@baseUrl = http://localhost:8000
+@authToken = {{login.response.body.token}}
+
+### Test de la connexion (Login) pour obtenir un token
+# @name login
+POST {{baseUrl}}/api/auth/login
+Content-Type: application/json
+
+{
+    "email": "thomas@example.com",
+    "password": "password123"
+}
+
+### Test du health check de l'API GDPR
+GET {{baseUrl}}/gdpr/health
+
+### Test d'exportation des données utilisateur
+GET {{baseUrl}}/gdpr/export
+Authorization: Bearer {{authToken}}
+
+### Test d'enregistrement du consentement marketing
+POST {{baseUrl}}/gdpr/consent
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "purpose": "marketing",
+    "granted": true
+}
+
+### Test d'enregistrement du consentement analytics
+POST {{baseUrl}}/gdpr/consent
+Authorization: Bearer {{authToken}}
+Content-Type: application/json
+
+{
+    "purpose": "analytics",
+    "granted": true
+}
+
+### Test de suppression du compte utilisateur (Attention: Action irréversible!)
+# DELETE {{baseUrl}}/gdpr/delete
+# Authorization: Bearer {{authToken}}
