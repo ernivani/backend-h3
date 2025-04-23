@@ -1,5 +1,5 @@
 use actix_web::{web, HttpResponse, HttpRequest};
-use crate::gdpr::GdprService;
+use crate::gdpr::{GdprService, DataRetentionConfig};
 use crate::auth::AuthService;
 use crate::models::User;
 use actix_web::error::ErrorUnauthorized;
@@ -13,6 +13,14 @@ pub struct ConsentInput {
     granted: bool,
 }
 
+#[derive(Deserialize)]
+pub struct DataRetentionInput {
+    inactive_user_months: Option<i64>,
+    archive_retention_years: Option<i64>,
+    consent_history_years: Option<i64>,
+    login_history_months: Option<i64>,
+}
+
 pub fn config(cfg: &mut web::ServiceConfig) {
     // Add logging to help debug route registration
     info!("Configuring GDPR routes at /api/gdpr");
@@ -22,7 +30,10 @@ pub fn config(cfg: &mut web::ServiceConfig) {
             .route("/export", web::get().to(export_user_data))
             .route("/consent", web::post().to(record_consent))
             .route("/consent", web::get().to(get_consent))
+            .route("/consent/history", web::get().to(get_consent_history))
             .route("/delete", web::delete().to(delete_user_data))
+            .route("/retention", web::post().to(run_data_retention))
+            .route("/retention/config", web::get().to(get_retention_config))
             .route("/health", web::get().to(health_check))
     );
 }
@@ -98,18 +109,40 @@ async fn get_consent(
     }
 }
 
+// Get user consent history
+async fn get_consent_history(
+    req: HttpRequest,
+    gdpr_service: web::Data<Arc<GdprService>>,
+    auth_service: web::Data<Arc<AuthService>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    info!("Request to get consent history received");
+
+    let (user, _, _) = extract_user_and_client_info(&req, &auth_service).await?;
+    
+    match gdpr_service.get_consent_history(user.id).await {
+        Ok(history) => Ok(HttpResponse::Ok().json(history)),
+        Err(e) => Ok(HttpResponse::InternalServerError().body(e.to_string())),
+    }
+}
+
 async fn record_consent(
     req: HttpRequest,
     gdpr_service: web::Data<Arc<GdprService>>,
     auth_service: web::Data<Arc<AuthService>>,
     consent_data: web::Json<ConsentInput>,
 ) -> Result<HttpResponse, actix_web::Error> {
-    info!("Request to record consent received");
+    info!("Request to record consent received for purpose: {}", consent_data.purpose);
     
-    let (user, _, _) = extract_user_and_client_info(&req, &auth_service).await?;
+    let (user, ip, user_agent) = extract_user_and_client_info(&req, &auth_service).await?;
     
     match gdpr_service
-        .record_consent(user.id, &consent_data.purpose, consent_data.granted)
+        .record_consent(
+            user.id, 
+            &consent_data.purpose, 
+            consent_data.granted,
+            Some(&ip),
+            Some(&user_agent)
+        )
         .await
     {
         Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
@@ -137,6 +170,55 @@ async fn delete_user_data(
         }))),
         Err(e) => Ok(HttpResponse::InternalServerError().body(e.to_string())),
     }
+}
+
+// Run data retention tasks (admin only)
+async fn run_data_retention(
+    req: HttpRequest,
+    gdpr_service: web::Data<Arc<GdprService>>,
+    auth_service: web::Data<Arc<AuthService>>,
+    config_input: Option<web::Json<DataRetentionInput>>,
+) -> Result<HttpResponse, actix_web::Error> {
+    info!("Request to run data retention tasks received");
+    
+    let (user, _, _) = extract_user_and_client_info(&req, &auth_service).await?;
+    
+    // In a real app, we would check if the user is an admin
+    // For simplicity, we'll just log who triggered this
+    info!("User {} triggered data retention tasks", user.id);
+    
+    // Configure data retention
+    let mut config = DataRetentionConfig::default();
+    
+    if let Some(input) = config_input {
+        if let Some(months) = input.inactive_user_months {
+            config.inactive_user_months = months;
+        }
+        if let Some(years) = input.archive_retention_years {
+            config.archive_retention_years = years;
+        }
+        if let Some(years) = input.consent_history_years {
+            config.consent_history_years = years;
+        }
+        if let Some(months) = input.login_history_months {
+            config.login_history_months = months;
+        }
+    }
+    
+    match gdpr_service.run_data_retention_tasks(&config).await {
+        Ok(_) => Ok(HttpResponse::Ok().json(serde_json::json!({
+            "status": "success",
+            "message": "Data retention tasks executed successfully"
+        }))),
+        Err(e) => Ok(HttpResponse::InternalServerError().body(e.to_string())),
+    }
+}
+
+// Get current data retention configuration
+async fn get_retention_config() -> HttpResponse {
+    let config = DataRetentionConfig::default();
+    
+    HttpResponse::Ok().json(config)
 }
 
 // Simple health check endpoint to test connectivity

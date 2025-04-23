@@ -9,8 +9,13 @@ use actix_cors::Cors;
 use sqlx::sqlite::SqlitePoolOptions;
 use std::sync::Arc;
 use auth::AuthService;
-use gdpr::GdprService;
+use gdpr::{GdprService, DataRetentionConfig};
 use breach_detection::BreachDetectionService;
+use sqlx::SqlitePool;
+use std::time::Duration;
+use log::{info, error};
+use tokio::task;
+use tokio::time::sleep;
 
 #[actix_web::main]
 async fn main() -> std::io::Result<()> {
@@ -21,18 +26,39 @@ async fn main() -> std::io::Result<()> {
     #[cfg(debug_assertions)]
     routes::init();
 
-    let database_url = std::env::var("DATABASE_URL")
-        .unwrap_or_else(|_| "sqlite:data.db".to_string());
-
-    let pool = SqlitePoolOptions::new()
-        .max_connections(5)
-        .connect(&database_url)
+    // Setup database connection
+    let pool = SqlitePool::connect("sqlite:data.db").await.expect("Failed to connect to database");
+    
+    // Run migrations to ensure all tables exist
+    println!("Running database migrations...");
+    sqlx::migrate!("./migrations")
+        .run(&pool)
         .await
-        .expect("Failed to create pool");
-
+        .expect("Failed to run migrations");
+    println!("Migrations completed successfully");
+    
+    // Create services with DB connection
     let auth_service = Arc::new(AuthService::new(pool.clone()));
     let gdpr_service = Arc::new(GdprService::new(pool.clone()));
     let breach_service = Arc::new(BreachDetectionService::new(pool.clone()));
+    
+    // Start background task for data retention
+    let retention_service = gdpr_service.clone();
+    task::spawn(async move {
+        // Load configuration (could also be loaded from a config file or database)
+        let config = DataRetentionConfig::default();
+        
+        // Run every 24 hours
+        loop {
+            sleep(Duration::from_secs(24 * 60 * 60)).await;
+            info!("Running scheduled data retention tasks");
+            
+            match retention_service.run_data_retention_tasks(&config).await {
+                Ok(_) => info!("Data retention tasks completed successfully"),
+                Err(e) => error!("Error running data retention tasks: {}", e),
+            }
+        }
+    });
 
     HttpServer::new(move || {
         let cors = Cors::default()
